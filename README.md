@@ -175,9 +175,3 @@ Acquisition vidéo
 ```
 
 ---
-
-## 7. Références
-
-* Viola & Jones – Rapid Object Detection using Haar-like Features
-* Poh et al., 2010 – Non-contact, automated cardiac pulse measurements
-* Verkruysse et al., 2008 – Remote plethysmographic imaging
