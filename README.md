@@ -1,1 +1,2 @@
-# ImageProc
+# lab1_ppg
+
