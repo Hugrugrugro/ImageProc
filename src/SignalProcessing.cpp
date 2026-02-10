@@ -2,6 +2,7 @@
 #include "FFT.h"
 #include <opencv2/opencv.hpp>
 #include <algorithm>
+#include <cmath>
 
 /* ===================== ICA CORE ===================== */
 static void center(cv::Mat& X)
@@ -48,10 +49,20 @@ std::vector<float> computeICA(const std::deque<float>& R,
     for (int it = 0; it < 200; it++)
     {
         cv::Mat WX = W * Xw;
-        cv::Mat gwx, g_wx;
+        cv::Mat gwx(WX.size(), WX.type());
+        cv::Mat g_wx(WX.size(), WX.type());
 
-        cv::tanh(WX, gwx);
-        g_wx = 1 - gwx.mul(gwx);
+        // Apply tanh element-wise
+        for (int i = 0; i < WX.rows; i++)
+        {
+            for (int j = 0; j < WX.cols; j++)
+            {
+                float val = WX.at<float>(i, j);
+                float tanhVal = std::tanh(val);
+                gwx.at<float>(i, j) = tanhVal;
+                g_wx.at<float>(i, j) = 1.0f - tanhVal * tanhVal;
+            }
+        }
 
         cv::Mat Wnew = (gwx * Xw.t()) / static_cast<float>(N);
         cv::Mat meanDeriv;
