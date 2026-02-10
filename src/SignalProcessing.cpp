@@ -1,8 +1,45 @@
-#include "SignalProcessing.h"
-#include "FFT.h"
+// SignalProcessing.cpp - Standalone version
 #include <opencv2/opencv.hpp>
+#include <vector>
+#include <deque>
+#include <numeric>
 #include <algorithm>
 #include <cmath>
+#include <iostream>
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+// Forward declaration of FFT class
+class FFT
+{
+public:
+    FFT();
+    ~FFT();
+    void setNbSignals(int nbSignal);
+    void setFps(float fFps);
+    void setBufferedSignalValues(std::vector<std::deque<float>> vBufferedSignalValues);
+    std::vector<std::deque<float>> getPowerSpectrum();
+
+private:
+    void pad(std::vector<float>& vInputSignal, std::vector<float>& vPaddedSignal);
+    void hannWindow(std::vector<float>& inSignal, std::vector<float>& outSignal);
+    void compute(std::vector<float>& vInputSignal, std::vector<float>& vFFTRealPart, std::vector<float>& vFFTImagPart);
+    void transformRadix2(std::vector<float>& real, std::vector<float>& imag);
+    std::size_t reverseBits(std::size_t x, unsigned int n);
+    void powerSpectrum(std::vector<float>& vFFTRealPart, std::vector<float>& vFFTImagPart, std::vector<float>& vFFTPowerSpectrum);
+    void phaseSpectrum(std::vector<float>& vFFTRealPart, std::vector<float>& vFFTImagPart, std::vector<float>& vFFTPhaseSpectrum);
+    unsigned long findUpperPowerOfTwo(unsigned long v);
+    
+    int m_i32NbSignals;
+    float m_fFps;
+    bool m_bTrigoTablesComputed;
+    std::size_t m_i32InSignalLength;
+    std::vector<float> m_vf64cosTable;
+    std::vector<float> m_vf64sinTable;
+    std::vector<std::deque<float>> m_vPowerSpectrumValues;
+};
 
 /* ===================== ICA CORE ===================== */
 static void center(cv::Mat& X)
@@ -21,7 +58,7 @@ static cv::Mat whiten(const cv::Mat& X)
 
     cv::Mat D = cv::Mat::zeros(3, 3, CV_32F);
     for (int i = 0; i < 3; i++)
-        D.at<float>(i, i) = 1.0f / sqrt(eigenValues.at<float>(i) + 1e-6f); // Add small epsilon for stability
+        D.at<float>(i, i) = 1.0f / sqrt(eigenValues.at<float>(i) + 1e-6f);
 
     return eigenVectors.t() * D * eigenVectors * X;
 }
@@ -83,7 +120,7 @@ std::vector<float> computeICA(const std::deque<float>& R,
 
     cv::Mat S = W * Xw;
 
-    /* Select component with max variance in cardiac frequency range */
+    /* Select component with max variance */
     int best = 0;
     double maxVar = 0;
 
@@ -116,20 +153,20 @@ float computeTemporalAverage(const std::deque<float>& vSignal)
 float computeTemporalStd(const std::deque<float>& vSignal)
 {
     if (vSignal.empty()) return 0.0f;
-    double avg = computeTemporalAverage(vSignal);
+    float avg = computeTemporalAverage(vSignal);
     double sq_sum = std::inner_product(vSignal.begin(), vSignal.end(), vSignal.begin(), 0.0);
     return static_cast<float>(std::sqrt(sq_sum / vSignal.size() - avg * avg));
 }
 
-std::vector<float> normalizeTemporalSignal(const std::deque<float>& vSignal, float avg, float std)
+std::vector<float> normalizeTemporalSignal(const std::deque<float>& vSignal, float avg, float stdDev)
 {
     std::vector<float> out;
     out.reserve(vSignal.size());
     
-    if (std < 1e-6f) std = 1.0f; // Avoid division by zero
+    if (stdDev < 1e-6f) stdDev = 1.0f;
     
     for (const auto& v : vSignal)
-        out.push_back((v - avg) / std);
+        out.push_back((v - avg) / stdDev);
     return out;
 }
 
@@ -138,26 +175,20 @@ std::vector<float> computeFourierTransform(const std::vector<float>& normalizedS
 {
     FFT fftProcessor;
     
-    // Convert vector to deque for FFT processing
     std::deque<float> signalDeque(normalizedSignal.begin(), normalizedSignal.end());
     
-    // Create a vector of deques (single signal)
     std::vector<std::deque<float>> bufferedSignals;
     bufferedSignals.push_back(signalDeque);
     
-    // Set number of signals and FPS (will be overridden if needed)
     fftProcessor.setNbSignals(1);
-    fftProcessor.setFps(15.0f); // Default FPS, should match main.cpp
+    fftProcessor.setFps(15.0f);
     
-    // Compute FFT
     fftProcessor.setBufferedSignalValues(bufferedSignals);
     
-    // Get power spectrum
     std::vector<std::deque<float>> powerSpectrum = fftProcessor.getPowerSpectrum();
     
     if (powerSpectrum.size() >= 2)
     {
-        // Return the power spectrum (skip first element which is frequency axis)
         std::deque<float>& spectrum = powerSpectrum[1];
         return std::vector<float>(spectrum.begin(), spectrum.end());
     }
@@ -170,25 +201,20 @@ int computeHeartRate(const std::vector<float>& powerSpectrum, float lowFreq, flo
 {
     if (powerSpectrum.empty()) return -1;
     
-    // Convert BPM to Hz
     float lowFreqHz = lowFreq / 60.0f;
     float highFreqHz = highFreq / 60.0f;
     
-    // Find frequency resolution
     int N = static_cast<int>(powerSpectrum.size());
     float freqResolution = fps / (2.0f * N);
     
-    // Convert frequency range to indices
     int lowIdx = static_cast<int>(lowFreqHz / freqResolution);
     int highIdx = static_cast<int>(highFreqHz / freqResolution);
     
-    // Clamp indices
     lowIdx = std::max(0, std::min(lowIdx, N - 1));
     highIdx = std::max(0, std::min(highIdx, N - 1));
     
     if (lowIdx >= highIdx) return -1;
     
-    // Find peak in the range
     int maxIdx = lowIdx;
     float maxValue = powerSpectrum[lowIdx];
     
@@ -201,10 +227,8 @@ int computeHeartRate(const std::vector<float>& powerSpectrum, float lowFreq, flo
         }
     }
     
-    // Convert index to frequency in Hz
     float peakFreqHz = maxIdx * freqResolution;
     
-    // Convert to BPM
     int heartRateBPM = static_cast<int>(peakFreqHz * 60.0f);
     
     return heartRateBPM;

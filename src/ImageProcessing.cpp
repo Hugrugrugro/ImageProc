@@ -1,4 +1,9 @@
-#include "ImageProcessing.h"
+// ImageProcessing.cpp - Standalone version
+#include <opencv2/opencv.hpp>
+#include <opencv2/objdetect.hpp>
+#include <vector>
+#include <iostream>
+#include <algorithm>
 
 bool loadFaceDetector(cv::CascadeClassifier& faceDetector, std::string sFilename)
 {
@@ -25,11 +30,10 @@ cv::Rect extractForeheadROI(const std::vector<cv::Rect>& faceROI)
     if (!faceROI.empty())
     {
         foreheadROI = faceROI[0];
-        // Position forehead in upper third of face
-        foreheadROI.y += static_cast<int>(foreheadROI.height * 0.1);  // Start slightly below top
-        foreheadROI.height = static_cast<int>(foreheadROI.height * 0.25);  // Use upper 25% of face
-        foreheadROI.x += static_cast<int>(foreheadROI.width * 0.25);  // Center horizontally
-        foreheadROI.width = static_cast<int>(foreheadROI.width * 0.5);  // Use middle 50% width
+        foreheadROI.y += static_cast<int>(foreheadROI.height * 0.1);
+        foreheadROI.height = static_cast<int>(foreheadROI.height * 0.25);
+        foreheadROI.x += static_cast<int>(foreheadROI.width * 0.25);
+        foreheadROI.width = static_cast<int>(foreheadROI.width * 0.5);
     }
     return foreheadROI;
 }
@@ -40,7 +44,7 @@ cv::Vec3f extractMeanRGB(const cv::Mat& frame, const cv::Rect& roi)
     cv::Scalar meanVal = cv::mean(roiImg);
     return cv::Vec3f(static_cast<float>(meanVal[2]), 
                      static_cast<float>(meanVal[1]), 
-                     static_cast<float>(meanVal[0])); // R,G,B
+                     static_cast<float>(meanVal[0]));
 }
 
 cv::Mat plotGraph(const std::vector<float>& vals, int ySize, int lowerBoundary, int highBoundary)
@@ -48,7 +52,6 @@ cv::Mat plotGraph(const std::vector<float>& vals, int ySize, int lowerBoundary, 
     if (vals.empty())
         return cv::Mat();
     
-    // Determine range for plotting
     int startIdx = (lowerBoundary >= 0) ? lowerBoundary : 0;
     int endIdx = (highBoundary >= 0 && highBoundary < static_cast<int>(vals.size())) ? highBoundary : vals.size() - 1;
     
@@ -58,7 +61,6 @@ cv::Mat plotGraph(const std::vector<float>& vals, int ySize, int lowerBoundary, 
         endIdx = vals.size() - 1;
     }
     
-    // Find min and max in the range
     float minVal = vals[startIdx];
     float maxVal = vals[startIdx];
     for (int i = startIdx; i <= endIdx; i++)
@@ -68,7 +70,7 @@ cv::Mat plotGraph(const std::vector<float>& vals, int ySize, int lowerBoundary, 
     }
     
     float range = maxVal - minVal;
-    if (range < 1e-6f) range = 1.0f; // Avoid division by zero
+    if (range < 1e-6f) range = 1.0f;
     
     float scale = static_cast<float>(ySize) / range;
     float bias = minVal;
@@ -82,7 +84,6 @@ cv::Mat plotGraph(const std::vector<float>& vals, int ySize, int lowerBoundary, 
         int y1 = rows - 1 - static_cast<int>((vals[startIdx + i] - bias) * scale);
         int y2 = rows - 1 - static_cast<int>((vals[startIdx + i + 1] - bias) * scale);
         
-        // Clamp values
         y1 = std::max(0, std::min(rows - 1, y1));
         y2 = std::max(0, std::min(rows - 1, y2));
         
