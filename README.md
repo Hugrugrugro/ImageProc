@@ -16,12 +16,12 @@
 
 ### 1.2 Caméra
 
-* **Type** : Webcam intégrée (modèle exact non spécifié)
+* **Type** : Webcam intégrée HP HD Web
 * **Interface** : Video4Linux2 (V4L2)
-* **Périphérique** : `/dev/video0` (présent mais accès non confirmé lors du relevé)
-* **Résolution d'acquisition** : Non déterminée (outils `v4l2-utils` non installés)
-* **Format de pixel** : Non déterminé (probablement YUYV ou MJPEG)
-* **Profondeur de couleur** : 24 bits (RGB, après conversion OpenCV)
+* **Périphérique** : `/dev/video0`
+* **Résolution d'acquisition** : 640/480
+* **Format de pixel** : YUYV
+* **Profondeur de couleur** : 24 bits
 
 > Remarque : les informations détaillées sur la caméra (résolutions, formats supportés) n’étaient pas accessibles au moment du relevé système.
 
