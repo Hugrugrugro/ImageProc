@@ -1,10 +1,11 @@
 #include "FFT.h"
+#include <cstring>
 
 FFT::FFT()
 {
     m_bTrigoTablesComputed = false;
     m_i32InSignalLength = 0;
-	m_vPowerSpectrumValues.clear();
+    m_vPowerSpectrumValues.clear();
 }
 
 FFT::~FFT()
@@ -15,8 +16,6 @@ FFT::~FFT()
 void FFT::setNbSignals(int nbSignal)
 {
     m_i32NbSignals = nbSignal;
-    //m_vBufferedSignals.resize(m_i32NbSignals);
-    //m_vBufferedFilteredSignals.resize(m_i32NbSignals);
 }
 
 void FFT::setFps(float fFps)
@@ -28,71 +27,78 @@ void FFT::setBufferedSignalValues(std::vector<std::deque<float>> vBufferedSignal
 {
     std::vector<std::deque<float>> l_vPowerSpectrumValues;
 
-    // creates the x-axis deque
+    // Creates the x-axis deque (frequency values)
     std::deque<float> l_dSpectrumFrequency;
     unsigned long l_i64NbFrequencies = findUpperPowerOfTwo(vBufferedSignalValues[0].size());
-	//std::cout << "l_i64NbFrequencies= " << l_i64NbFrequencies << std::endl;
-    for (int l_freq = 0; l_freq < l_i64NbFrequencies; l_freq++)
+    
+    for (unsigned long l_freq = 0; l_freq < l_i64NbFrequencies; l_freq++)
     {
-        l_dSpectrumFrequency.push_back((float)l_freq * m_fFps / l_i64NbFrequencies);
+        l_dSpectrumFrequency.push_back(static_cast<float>(l_freq) * m_fFps / l_i64NbFrequencies);
     }
-    //std::cout << "l_i64NbFrequencies= " << l_i64NbFrequencies << std::endl;
+    
     l_vPowerSpectrumValues.push_back(l_dSpectrumFrequency);
-//std::cout << "l_i64NbFrequencies= " << l_i64NbFrequencies << std::endl;
 
-    for (auto l_signal = 0; l_signal < m_i32NbSignals; l_signal++)
+    for (int l_signal = 0; l_signal < m_i32NbSignals; l_signal++)
     {
-        std::vector<float> l_vCurrentBufferedSignal = {vBufferedSignalValues[l_signal].begin(), vBufferedSignalValues[l_signal].end()};
-        // padding
+        std::vector<float> l_vCurrentBufferedSignal(vBufferedSignalValues[l_signal].begin(), 
+                                                     vBufferedSignalValues[l_signal].end());
+        
+        // Padding
         std::vector<float> l_vCurrentPaddedSignal;
         pad(l_vCurrentBufferedSignal, l_vCurrentPaddedSignal);
-        // windowing
+        
+        // Windowing
         std::vector<float> l_vCurrentWindowedSignal;
         hannWindow(l_vCurrentPaddedSignal, l_vCurrentWindowedSignal);
+        
         // FFT
         std::vector<float> l_vFFTRealPart, l_vFFTImagPart;
         compute(l_vCurrentWindowedSignal, l_vFFTRealPart, l_vFFTImagPart);
+        
         // PowerSpectrum
         std::vector<float> l_vFFTPowerSpectrum;
         powerSpectrum(l_vFFTRealPart, l_vFFTImagPart, l_vFFTPowerSpectrum);
-        // Phase Spectrum
-        std::vector<float> l_vFFTPhaseSpectrum;
-        phaseSpectrum(l_vFFTRealPart, l_vFFTImagPart, l_vFFTPhaseSpectrum);
-
-        std::deque<float> l_dPowerSpectrum = {l_vFFTPowerSpectrum.begin(), l_vFFTPowerSpectrum.end()};
+        
+        // Only keep first half (positive frequencies)
+        std::vector<float> l_vFFTPowerSpectrumHalf(l_vFFTPowerSpectrum.begin(), 
+                                                    l_vFFTPowerSpectrum.begin() + l_vFFTPowerSpectrum.size() / 2);
+        
+        std::deque<float> l_dPowerSpectrum(l_vFFTPowerSpectrumHalf.begin(), l_vFFTPowerSpectrumHalf.end());
         l_vPowerSpectrumValues.push_back(l_dPowerSpectrum);
     }
-    //std::cout << "l_i64NbFrequencies= " << l_i64NbFrequencies << std::endl;
 
     m_vPowerSpectrumValues = l_vPowerSpectrumValues;
-    //std::cout << "l_i64NbFrequencies= " << l_i64NbFrequencies << std::endl;
 }
 
-std::vector<std::deque<float>>  FFT::getPowerSpectrum()
+std::vector<std::deque<float>> FFT::getPowerSpectrum()
 {
-	return m_vPowerSpectrumValues;
+    return m_vPowerSpectrumValues;
 }
 
-void FFT::pad(std::vector<float> &vInputSignal, std::vector<float> &vPaddedSignal)
+void FFT::pad(std::vector<float>& vInputSignal, std::vector<float>& vPaddedSignal)
 {
-    if (vInputSignal.size() == 0)
+    if (vInputSignal.empty())
+    {
+        vPaddedSignal.clear();
         return;
-    else if ((vInputSignal.size() & (vInputSignal.size() - 1)) == 0)  // Is power of 2
+    }
+    
+    // Check if already power of 2
+    if ((vInputSignal.size() & (vInputSignal.size() - 1)) == 0)
     {
         vPaddedSignal = vInputSignal;
     }
     else
     {
-        vPaddedSignal.resize(findUpperPowerOfTwo(vInputSignal.size()));
-        std::fill(vPaddedSignal.begin(), vPaddedSignal.end(), 0.0f);
-        memcpy(&vPaddedSignal.at(0), &vInputSignal.at(0), vInputSignal.size());
+        unsigned long paddedSize = findUpperPowerOfTwo(vInputSignal.size());
+        vPaddedSignal.resize(paddedSize, 0.0f);
+        std::copy(vInputSignal.begin(), vInputSignal.end(), vPaddedSignal.begin());
     }
 }
 
 unsigned long FFT::findUpperPowerOfTwo(unsigned long v)
 {
-    // To test
-    //unsigned long next = pow(2, ceil(log(v)/log(2)));
+    if (v == 0) return 1;
     v--;
     v |= v >> 1;
     v |= v >> 2;
@@ -103,64 +109,69 @@ unsigned long FFT::findUpperPowerOfTwo(unsigned long v)
     return v;
 }
 
-void FFT::compute(std::vector<float> &vInputSignal, std::vector<float> &vFFTRealPart, std::vector<float> &vFFTImagPart)
+void FFT::compute(std::vector<float>& vInputSignal, std::vector<float>& vFFTRealPart, std::vector<float>& vFFTImagPart)
 {
-    // sets the real and imag parts of the input signal
-    // our input signal is always real
+    // Sets the real and imag parts of the input signal
     std::vector<float> l_vf64SignalReal(vInputSignal);
-    std::vector<float> l_vf64SignalImag(l_vf64SignalReal.size(), 0.0);
+    std::vector<float> l_vf64SignalImag(l_vf64SignalReal.size(), 0.0f);
 
     std::size_t n = l_vf64SignalReal.size();
     if (n == 0)
+    {
+        vFFTRealPart.clear();
+        vFFTImagPart.clear();
         return;
-    else if ((n & (n - 1)) == 0)  // Is power of 2
+    }
+    
+    if ((n & (n - 1)) == 0)  // Is power of 2
         transformRadix2(l_vf64SignalReal, l_vf64SignalImag);
-    else  // More complicated algorithm for arbitrary sizes
+    else
         std::cerr << "[ERROR] (FFT::compute) : input signal is not padded!" << std::endl;
 
     vFFTRealPart = l_vf64SignalReal;
     vFFTImagPart = l_vf64SignalImag;
 }
 
-void FFT::transformRadix2(std::vector<float> &real, std::vector<float> &imag)
+void FFT::transformRadix2(std::vector<float>& real, std::vector<float>& imag)
 {
-    // Compute levels = floor(log2(n))
     if (real.size() != imag.size())
-        throw "Mismatched lengths";
+        throw std::runtime_error("Mismatched lengths");
 
     std::size_t n = real.size();
-    unsigned int levels;
+    
+    // Compute levels = floor(log2(n))
+    unsigned int levels = 0;
     {
         std::size_t temp = n;
-        levels = 0;
         while (temp > 1) {
             levels++;
             temp >>= 1;
         }
         if (1u << levels != n)
-            throw "Length is not a power of 2";
+            throw std::runtime_error("Length is not a power of 2");
     }
 
-    // buffer size has changed therefore trigo tables shoud be recomputed
-    if (real.size()!=m_i32InSignalLength)
+    // Buffer size has changed therefore trigo tables should be recomputed
+    if (real.size() != m_i32InSignalLength)
+    {
         m_bTrigoTablesComputed = false;
+        m_i32InSignalLength = real.size();
+    }
 
     if (!m_bTrigoTablesComputed)
     {
-        // Trignometric tables
-        m_vf64cosTable.resize(n/2);
-        m_vf64sinTable.resize(n/2);
+        // Trigonometric tables
+        m_vf64cosTable.resize(n / 2);
+        m_vf64sinTable.resize(n / 2);
 
         for (std::size_t i = 0; i < n / 2; i++)
         {
-            m_vf64cosTable[i] = cos(2 * M_PI * i / n);
-            m_vf64sinTable[i] = sin(2 * M_PI * i / n);
+            m_vf64cosTable[i] = static_cast<float>(cos(2.0 * M_PI * i / n));
+            m_vf64sinTable[i] = static_cast<float>(sin(2.0 * M_PI * i / n));
         }
 
         m_bTrigoTablesComputed = true;
     }
-
-
 
     // Bit-reversed addressing permutation
     for (std::size_t i = 0; i < n; i++)
@@ -168,12 +179,8 @@ void FFT::transformRadix2(std::vector<float> &real, std::vector<float> &imag)
         std::size_t j = reverseBits(i, levels);
         if (j > i)
         {
-            double temp = real[i];
-            real[i] = real[j];
-            real[j] = temp;
-            temp = imag[i];
-            imag[i] = imag[j];
-            imag[j] = temp;
+            std::swap(real[i], real[j]);
+            std::swap(imag[i], imag[j]);
         }
     }
 
@@ -186,8 +193,8 @@ void FFT::transformRadix2(std::vector<float> &real, std::vector<float> &imag)
         {
             for (std::size_t j = i, k = 0; j < i + halfsize; j++, k += tablestep)
             {
-                double tpre =  real[j+halfsize] * m_vf64cosTable[k] + imag[j+halfsize] * m_vf64sinTable[k];
-                double tpim = -real[j+halfsize] * m_vf64sinTable[k] + imag[j+halfsize] * m_vf64cosTable[k];
+                float tpre = real[j + halfsize] * m_vf64cosTable[k] + imag[j + halfsize] * m_vf64sinTable[k];
+                float tpim = -real[j + halfsize] * m_vf64sinTable[k] + imag[j + halfsize] * m_vf64cosTable[k];
                 real[j + halfsize] = real[j] - tpre;
                 imag[j + halfsize] = imag[j] - tpim;
                 real[j] += tpre;
@@ -202,35 +209,40 @@ void FFT::transformRadix2(std::vector<float> &real, std::vector<float> &imag)
 std::size_t FFT::reverseBits(std::size_t x, unsigned int n)
 {
     std::size_t result = 0;
-    unsigned int i;
-    for (i = 0; i < n; i++, x >>= 1)
+    for (unsigned int i = 0; i < n; i++, x >>= 1)
         result = (result << 1) | (x & 1);
     return result;
 }
 
-void FFT::powerSpectrum(std::vector<float> &vFFTRealPart, std::vector<float> &vFFTImagPart, std::vector<float> &vFFTPowerSpectrum)
+void FFT::powerSpectrum(std::vector<float>& vFFTRealPart, std::vector<float>& vFFTImagPart, std::vector<float>& vFFTPowerSpectrum)
 {
     std::size_t n = vFFTRealPart.size();
     if (n == 0)
+    {
+        vFFTPowerSpectrum.clear();
         return;
+    }
 
     vFFTPowerSpectrum.resize(n);
     for (std::size_t i = 0; i < n; i++)
     {
-        vFFTPowerSpectrum[i] = sqrt(pow(vFFTRealPart[i],2) + pow(vFFTImagPart[i],2));
+        vFFTPowerSpectrum[i] = sqrt(vFFTRealPart[i] * vFFTRealPart[i] + vFFTImagPart[i] * vFFTImagPart[i]);
     }
 }
 
-void FFT::phaseSpectrum(std::vector<float> &vFFTRealPart, std::vector<float> &vFFTImagPart, std::vector<float> &vFFTPowerSpectrum)
+void FFT::phaseSpectrum(std::vector<float>& vFFTRealPart, std::vector<float>& vFFTImagPart, std::vector<float>& vFFTPhaseSpectrum)
 {
     std::size_t n = vFFTRealPart.size();
     if (n == 0)
+    {
+        vFFTPhaseSpectrum.clear();
         return;
+    }
 
-    vFFTPowerSpectrum.resize(n);
+    vFFTPhaseSpectrum.resize(n);
     for (std::size_t i = 0; i < n; i++)
     {
-        vFFTPowerSpectrum[i] = atan2(vFFTImagPart[i], vFFTRealPart[i]);
+        vFFTPhaseSpectrum[i] = atan2(vFFTImagPart[i], vFFTRealPart[i]);
     }
 }
 
@@ -238,13 +250,17 @@ void FFT::hannWindow(std::vector<float>& inSignal, std::vector<float>& outSignal
 {
     std::size_t n = inSignal.size();
     if (n == 0)
-        return;
-
-    for (std::size_t i=0; i < n; i++)
     {
-        double multiplier = 0.5 * (1 - cos(2*M_PI*i/(n-1)));
+        outSignal.clear();
+        return;
+    }
+
+    outSignal.clear();
+    outSignal.reserve(n);
+    
+    for (std::size_t i = 0; i < n; i++)
+    {
+        float multiplier = 0.5f * (1.0f - cos(2.0f * M_PI * i / (n - 1)));
         outSignal.push_back(multiplier * inSignal[i]);
     }
 }
-
-

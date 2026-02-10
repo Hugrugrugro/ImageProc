@@ -19,44 +19,79 @@ std::vector<cv::Rect> detectFace(cv::CascadeClassifier& faceDetector, cv::Mat& f
     return faceRectangles;
 }
 
-cv::Rect extractForeheadROI(std::vector<cv::Rect>& faceROI)
+cv::Rect extractForeheadROI(const std::vector<cv::Rect>& faceROI)
 {
     cv::Rect foreheadROI;
     if (!faceROI.empty())
     {
         foreheadROI = faceROI[0];
-        foreheadROI.height *= 0.3;
+        // Position forehead in upper third of face
+        foreheadROI.y += static_cast<int>(foreheadROI.height * 0.1);  // Start slightly below top
+        foreheadROI.height = static_cast<int>(foreheadROI.height * 0.25);  // Use upper 25% of face
+        foreheadROI.x += static_cast<int>(foreheadROI.width * 0.25);  // Center horizontally
+        foreheadROI.width = static_cast<int>(foreheadROI.width * 0.5);  // Use middle 50% width
     }
     return foreheadROI;
 }
 
-/* ===================== NEW ===================== */
-cv::Vec3f extractMeanRGB(cv::Mat& frame, cv::Rect& roi)
+cv::Vec3f extractMeanRGB(const cv::Mat& frame, const cv::Rect& roi)
 {
     cv::Mat roiImg = frame(roi);
     cv::Scalar meanVal = cv::mean(roiImg);
-    return cv::Vec3f(meanVal[2], meanVal[1], meanVal[0]); // R,G,B
+    return cv::Vec3f(static_cast<float>(meanVal[2]), 
+                     static_cast<float>(meanVal[1]), 
+                     static_cast<float>(meanVal[0])); // R,G,B
 }
-/* =============================================== */
 
-cv::Mat plotGraph(std::vector<float>& vals, int ySize, int lowerBoundary, int highBoundary)
+cv::Mat plotGraph(const std::vector<float>& vals, int ySize, int lowerBoundary, int highBoundary)
 {
-    auto it = minmax_element(vals.begin(), vals.end());
-    float scale = 1.f / ceil(*it.second - *it.first);
-    float bias = *it.first;
+    if (vals.empty())
+        return cv::Mat();
+    
+    // Determine range for plotting
+    int startIdx = (lowerBoundary >= 0) ? lowerBoundary : 0;
+    int endIdx = (highBoundary >= 0 && highBoundary < static_cast<int>(vals.size())) ? highBoundary : vals.size() - 1;
+    
+    if (startIdx >= endIdx || startIdx >= static_cast<int>(vals.size()))
+    {
+        startIdx = 0;
+        endIdx = vals.size() - 1;
+    }
+    
+    // Find min and max in the range
+    float minVal = vals[startIdx];
+    float maxVal = vals[startIdx];
+    for (int i = startIdx; i <= endIdx; i++)
+    {
+        if (vals[i] < minVal) minVal = vals[i];
+        if (vals[i] > maxVal) maxVal = vals[i];
+    }
+    
+    float range = maxVal - minVal;
+    if (range < 1e-6f) range = 1.0f; // Avoid division by zero
+    
+    float scale = static_cast<float>(ySize) / range;
+    float bias = minVal;
 
     int rows = ySize + 1;
-    cv::Mat image = 255 * cv::Mat::ones(rows, vals.size(), CV_8UC3);
+    int cols = endIdx - startIdx + 1;
+    cv::Mat image = cv::Mat(rows, cols, CV_8UC3, cv::Scalar(255, 255, 255));
 
-    for (int i = 0; i < (int)vals.size() - 1; i++)
+    for (int i = 0; i < cols - 1; i++)
     {
+        int y1 = rows - 1 - static_cast<int>((vals[startIdx + i] - bias) * scale);
+        int y2 = rows - 1 - static_cast<int>((vals[startIdx + i + 1] - bias) * scale);
+        
+        // Clamp values
+        y1 = std::max(0, std::min(rows - 1, y1));
+        y2 = std::max(0, std::min(rows - 1, y2));
+        
         cv::line(image,
-            cv::Point(i, rows - 1 - (vals[i] - bias) * scale * ySize),
-            cv::Point(i + 1, rows - 1 - (vals[i + 1] - bias) * scale * ySize),
+            cv::Point(i, y1),
+            cv::Point(i + 1, y2),
             cv::Scalar(255, 0, 0), 1);
     }
 
     cv::resize(image, image, cv::Size(450, 450));
     return image;
 }
-
